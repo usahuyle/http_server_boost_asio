@@ -2,6 +2,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
 #include <iostream>
+#include <thread>
 
 int main() {
     try {
@@ -30,8 +31,10 @@ int main() {
             return res;
         });
 
-        Server s(io_context, 8080, router);
-        io_context.run();
+        int num_thread= std::thread::hardware_concurrency();
+
+        Server s(io_context, 8080, router, 1);
+        s.run();
 
     } catch (std::exception& e) {
         std::cerr << "Exception: " << e.what() << "\n";

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <map>
 #include <string>
+#include <thread>
 
 using boost::asio::ip::tcp;
 
@@ -65,7 +66,7 @@ HttpRequest Session::parse_request(std::istream& stream){
     std::istringstream rl(request_line);
     rl >> req.method >> req.path >> req.version;
     std::cout << "Request Line: " << req.method << " " << req.path << " " << req.version << "\n";
-
+    std::cout << "Thread number: "<< std::this_thread::get_id() << "\n"; 
     //parse headers
     std::string line;
     while (std::getline(stream, line) && line != "\r"){
