@@ -1,8 +1,11 @@
 #include "../headers/session.hpp"
 #include "../headers/router.hpp"
 #include <boost/asio/read_until.hpp>
+#include <boost/asio/ssl/stream.hpp>
+#include <boost/asio/ssl/stream_base.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/system/detail/error_code.hpp>
+#include <boost/asio/ssl.hpp>
 #include <cstddef>
 #include <iostream>
 #include <istream>
@@ -13,13 +16,27 @@
 #include <thread>
 
 using boost::asio::ip::tcp;
+using boost::asio::ssl::stream;
 
-Session::Session(tcp::socket socket, const Router& router)
+Session::Session(stream<tcp::socket> socket, const Router& router)
     : socket_(std::move(socket)), router_(router) {}
 
 void Session::start(){
-    do_read();
+    do_handshake();
 }
+
+void Session::do_handshake(){
+    std::shared_ptr<Session> self(shared_from_this());
+    socket_.async_handshake(boost::asio::ssl::stream_base::server,
+    [this, self](boost::system::error_code ec){
+        if (!ec){
+            do_read();
+        }else{
+            std::cerr << "TLS Handshake error" << ec.message() << "\n";
+        }
+    });
+}
+
 
 void Session::do_read(){
     std::shared_ptr<Session> self(shared_from_this());
@@ -30,7 +47,8 @@ void Session::do_read(){
             HttpRequest req = parse_request(request_stream);
             HttpResponse res = router_.route(req.path);
             do_write(res);
-            
+        }else{
+            std::cerr << "Read Error: "<< ec.message() << "\n";
         }
     });
 }
@@ -48,7 +66,10 @@ void Session::do_write(const HttpResponse& res) {
     boost::asio::async_write(socket_, boost::asio::buffer(response_string), 
     [this, self](boost::system::error_code ec, std::size_t length){
         if(!ec){
-            do_read(); //read for the next request
+            boost::system::error_code shutdown_ec;
+            socket_.shutdown(shutdown_ec);
+        }else{
+            std::cerr << "Write Error: " << ec.message() <<"\n";
         }
     });
 }

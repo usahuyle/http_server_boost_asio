@@ -1,12 +1,24 @@
 #include "../src//headers/server.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/ssl/context.hpp>
 #include <iostream>
 #include <thread>
+
+using boost::asio::ssl::context;
+
 
 int main() {
     try {
         boost::asio::io_context io_context;
+        context ssl_context(context::tlsv12_server);
+        ssl_context.set_options(
+            boost::asio::ssl::context::default_workarounds
+          | boost::asio::ssl::context::no_sslv2
+          | boost::asio::ssl::context::single_dh_use);
+
+        ssl_context.use_certificate_chain_file("../../server.crt");
+        ssl_context.use_private_key_file("../../server.key", context::pem);
 
         Router router;
         router.add_route("/", [] {
@@ -33,7 +45,7 @@ int main() {
 
         int num_thread= std::thread::hardware_concurrency();
 
-        Server s(io_context, 8080, router, 1);
+        Server s(io_context, 8080, ssl_context ,router, num_thread);
         s.run();
 
     } catch (std::exception& e) {
