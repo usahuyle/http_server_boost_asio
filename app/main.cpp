@@ -1,4 +1,5 @@
 #include "../src//headers/server.hpp"
+#include "router.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl/context.hpp>
@@ -21,17 +22,20 @@ int main() {
         ssl_context.use_private_key_file("../../server.key", context::pem);
 
         Router router;
-        router.add_route("/", [] {
+        router.add_route("/", [](const HttpRequest& req) {
             HttpResponse res;
             res.status_line = "HTTP/1.1 200 OK";
-            res.body = "Hello from HTTP";
+            res.body = "Test Home Page";
             res.headers["Content-Type"] = "text/plain";
             res.headers["Content-Length"] = std::to_string(res.body.size());
-            res.headers["Connection"] = "close";
+            auto connection = req.headers.find("Connection");
+            res.headers["Connection"]= (connection != req.headers.end() && connection->second == "keep-alive") 
+                                        ? "keep-alive" 
+                                        : "close";
             return res;
         });
 
-        router.add_route("/time", [] {
+        router.add_route("/time", [](const HttpRequest& req) {
             std::time_t now = std::time(nullptr);
             std::string body = std::string("Current time: ") + std::ctime(&now);
             HttpResponse res;
@@ -39,7 +43,10 @@ int main() {
             res.body = body;
             res.headers["Content-Type"] = "text/plain";
             res.headers["Content-Length"] = std::to_string(res.body.size());
-            res.headers["Connection"] = "close";
+            auto connection = req.headers.find("Connection");
+            res.headers["Connection"]= (connection != req.headers.end() && connection->second == "keep-alive") 
+                                        ? "keep-alive"  
+                                        : "close";
             return res;
         });
 

@@ -18,10 +18,10 @@ struct HttpRequest {
 
 class Router {
 public:
-    using Handler = std::function<HttpResponse()>;
+    using Handler = std::function<HttpResponse(const HttpRequest&)>;
 
     void add_route(const std::string& path, Handler handler);
-    HttpResponse route(const std::string& path) const;
+    HttpResponse route(const HttpRequest& req) const;
 
 private:
     std::map<std::string, Handler> routes_;

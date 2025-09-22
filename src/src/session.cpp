@@ -1,6 +1,7 @@
 #include "../headers/session.hpp"
 #include "../headers/router.hpp"
 #include <boost/asio/read_until.hpp>
+#include <boost/asio/ssl/error.hpp>
 #include <boost/asio/ssl/stream.hpp>
 #include <boost/asio/ssl/stream_base.hpp>
 #include <boost/asio/write.hpp>
@@ -29,10 +30,10 @@ void Session::do_handshake(){
     std::shared_ptr<Session> self(shared_from_this());
     socket_.async_handshake(boost::asio::ssl::stream_base::server,
     [this, self](boost::system::error_code ec){
-        if (!ec){
+        try{
             do_read();
-        }else{
-            std::cerr << "TLS Handshake error" << ec.message() << "\n";
+        }catch(boost::system::error_code& ec){
+            std::cerr << "TLS Handshake error: " << ec.message() << "\n";
         }
     });
 }
@@ -42,12 +43,15 @@ void Session::do_read(){
     std::shared_ptr<Session> self(shared_from_this());
     boost::asio::async_read_until(socket_, buffer_, "\r\n\r\n",
     [this, self](boost::system::error_code ec, std::size_t Length){
-        if (!ec){
+        try{
             std::istream request_stream(&buffer_);
             HttpRequest req = parse_request(request_stream);
-            HttpResponse res = router_.route(req.path);
+            HttpResponse res = router_.route(req);
             do_write(res);
-        }else{
+        }catch(boost::system::error_code& ec){
+            if (ec == boost::asio::ssl::error::stream_truncated){
+                return;
+            }
             std::cerr << "Read Error: "<< ec.message() << "\n";
         }
     });
@@ -65,11 +69,12 @@ void Session::do_write(const HttpResponse& res) {
     std::string response_string = response.str();
     boost::asio::async_write(socket_, boost::asio::buffer(response_string), 
     [this, self](boost::system::error_code ec, std::size_t length){
-        if(!ec){
+        try{  
+            do_read();
+        }catch(boost::system::error_code &ec){
+            std::cerr << "Write Error: " << ec.message() <<"\n";
             boost::system::error_code shutdown_ec;
             socket_.shutdown(shutdown_ec);
-        }else{
-            std::cerr << "Write Error: " << ec.message() <<"\n";
         }
     });
 }
@@ -79,7 +84,7 @@ HttpRequest Session::parse_request(std::istream& stream){
     HttpRequest req;
     if (!std::getline(stream, request_line)) return req; // nothing to parse
 
-    // remove trailing '\r' if present (getline removed '\n' but leaves '\r')
+    // remove trailing '\r' if present
     if (!request_line.empty() && request_line.back() == '\r') {
         request_line.pop_back();
     }
@@ -88,6 +93,7 @@ HttpRequest Session::parse_request(std::istream& stream){
     rl >> req.method >> req.path >> req.version;
     std::cout << "Request Line: " << req.method << " " << req.path << " " << req.version << "\n";
     std::cout << "Thread number: "<< std::this_thread::get_id() << "\n"; 
+
     //parse headers
     std::string line;
     while (std::getline(stream, line) && line != "\r"){
@@ -102,7 +108,6 @@ HttpRequest Session::parse_request(std::istream& stream){
             if (!value.empty() && value.back() == '\r'){
                 value.pop_back();
             }
-
             req.headers[key]= value;
         }
     }
