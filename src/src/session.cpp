@@ -44,18 +44,20 @@ void Session::do_read(){
     std::shared_ptr<Session> self(shared_from_this());
     boost::asio::async_read_until(socket_, buffer_, "\r\n\r\n",
     [this, self](boost::system::error_code ec, std::size_t Length){
-        try{
-            std::istream request_stream(&buffer_);
-            HttpRequest req = parse_request(request_stream);
-            HttpResponse res = router_.route(req);
-            do_write(res);
-        }catch(boost::system::error_code& ec){
-            if (ec == boost::asio::ssl::error::stream_truncated){
+        if(ec){
+            if (ec == boost::asio::ssl::error::stream_truncated ||
+                ec == boost::asio::error::eof){
                 return;
             }
             std::cerr << "Read Error: "<< ec.message() << "\n";
+            return;
         }
-    });
+        std::istream request_stream(&buffer_);
+        HttpRequest req = parse_request(request_stream);
+        HttpResponse res = router_.route(req);
+        do_write(res);
+        }
+    );
 }
 
 void Session::do_write(const HttpResponse& res) {
@@ -73,12 +75,14 @@ void Session::do_write(const HttpResponse& res) {
         if(ec){
             if (ec == boost::asio::error::broken_pipe ||  
                 ec == boost::asio::error::eof ||
-                ec == boost::asio::error::connection_reset){
+                ec == boost::asio::error::connection_reset||
+                ec == boost::asio::ssl::error::stream_truncated){
                     return;
                 }
             std::cerr << "Write Error: " << ec.message() << "\n";
             boost::system::error_code shutdown_ec;
             socket_.shutdown(shutdown_ec);
+            return;
         }
 
         auto it = res.headers.find("Connection");
@@ -103,8 +107,7 @@ HttpRequest Session::parse_request(std::istream& stream){
 
     std::istringstream rl(request_line);
     rl >> req.method >> req.path >> req.version;
-    std::cout << "Request Line: " << req.method << " " << req.path << " " << req.version << "\n";
-    std::cout << "Thread number: "<< std::this_thread::get_id() << "\n"; 
+    // std::cout << "Request Line: " << req.method << " " << req.path << " " << req.version << "\n";
 
     //parse headers
     std::string line;
