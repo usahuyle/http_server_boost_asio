@@ -21,6 +21,20 @@ int main() {
         ssl_context.use_certificate_chain_file("../../server.crt");
         ssl_context.use_private_key_file("../../server.key", context::pem);
 
+        // Enable TLS session resumption (server cache)
+        SSL_CTX* native_ctx = ssl_context.native_handle();
+            
+        // Use built-in server cache
+        SSL_CTX_set_session_cache_mode(native_ctx, SSL_SESS_CACHE_SERVER);
+
+        // Set a unique session id context
+        SSL_CTX_set_session_id_context(native_ctx,
+            reinterpret_cast<const unsigned char*>("MyServerID"),
+            sizeof("MyServerID") - 1);
+
+        // Enable session tickets for TLS 1.3+
+        SSL_CTX_set_options(native_ctx, SSL_OP_NO_TICKET);
+
         Router router;
         router.add_route("/", [](const HttpRequest& req) {
             HttpResponse res;

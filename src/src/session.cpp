@@ -1,5 +1,6 @@
 #include "../headers/session.hpp"
 #include "../headers/router.hpp"
+#include <boost/asio/error.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/ssl/error.hpp>
 #include <boost/asio/ssl/stream.hpp>
@@ -68,11 +69,22 @@ void Session::do_write(const HttpResponse& res) {
     response << res.body;
     std::string response_string = response.str();
     boost::asio::async_write(socket_, boost::asio::buffer(response_string), 
-    [this, self](boost::system::error_code ec, std::size_t length){
-        try{  
+    [this, self, res](boost::system::error_code ec, std::size_t length){
+        if(ec){
+            if (ec == boost::asio::error::broken_pipe ||  
+                ec == boost::asio::error::eof ||
+                ec == boost::asio::error::connection_reset){
+                    return;
+                }
+            std::cerr << "Write Error: " << ec.message() << "\n";
+            boost::system::error_code shutdown_ec;
+            socket_.shutdown(shutdown_ec);
+        }
+
+        auto it = res.headers.find("Connection");
+        if (it != res.headers.end() && it->second == "keep-alive"){
             do_read();
-        }catch(boost::system::error_code &ec){
-            std::cerr << "Write Error: " << ec.message() <<"\n";
+        }else{
             boost::system::error_code shutdown_ec;
             socket_.shutdown(shutdown_ec);
         }
